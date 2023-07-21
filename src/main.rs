@@ -1,7 +1,8 @@
+use crate::html::build_body_from_folder;
 use std::{io::{Read, Write},
           net::{TcpListener, TcpStream},
           thread,
-          fs};
+          fs::metadata};
 
 
 mod html;
@@ -27,16 +28,19 @@ fn handle_client(mut stream: TcpStream) {
                 } else {
                     break;
                 }
-                let folder_path: &str;
+                let path_asked: &str;
                 if let Some(word) = get_line_splitted.next() {
-                    folder_path = word;
+                    path_asked = word;
                 } else {
                     break;
                 }
 
-                println!("{peer_addr}: looking to get \'{folder_path}\' served");
+                println!("{peer_addr}: looking to get \'{path_asked}\' served");
 
-                let response_body = "eoooooooooooo!";
+                let response_body = match metadata(format!(".{path_asked}")).unwrap().is_dir() {
+                    true => build_body_from_folder(path_asked),
+                    false => todo!(),
+                };
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
                     response_body.len(),
@@ -61,7 +65,7 @@ fn handle_client(mut stream: TcpStream) {
 
 fn main() {
     let ip = "127.0.0.1";
-    let port = "8000";
+    let port = "8080";
     let listener = TcpListener::bind(&format!("{ip}:{port}")).unwrap();
     println!("Server listening with address {ip}:{port}...");
 
