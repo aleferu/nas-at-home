@@ -1,4 +1,4 @@
-use crate::html::build_body_from_folder;
+use crate::html::{build_body_from_folder, build_body_from_404};
 use std::{io::{Read, Write},
           net::{TcpListener, TcpStream},
           thread,
@@ -37,15 +37,33 @@ fn handle_client(mut stream: TcpStream) {
 
                 println!("{peer_addr}: looking to get \'{path_asked}\' served");
 
-                let response_body = match metadata(format!(".{path_asked}")).unwrap().is_dir() {
-                    true => build_body_from_folder(path_asked),
-                    false => todo!(),
-                };
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
-                    response_body.len(),
-                    response_body
-                );
+                // let response_body = match metadata(format!(".{path_asked}")).map_err(|err| {
+                //     eprintln!("Error trying to get metadata from .{path_asked} with error: {err}");
+                // }).unwrap().is_dir() {
+                //     true => build_body_from_folder(path_asked),
+                //     false => todo!(),
+                // };
+                let response: String;
+                if let Ok(path_metadata) = metadata(format!(".{path_asked}")) {
+                    let response_body = match path_metadata.is_dir() {
+                        true => build_body_from_folder(path_asked),
+                        false => todo!(),
+                    };
+                    response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        response_body.len(),
+                        response_body
+                    );
+                    println!("{peer_addr}: 200 OK");
+                } else {
+                    let response_body = build_body_from_404(path_asked);
+                    response = format!(
+                        "HTTP/1.1 404 Not Found\r\nContent-Length: {}\r\n\r\n{}",
+                        response_body.len(),
+                        response_body
+                    );
+                    println!("{peer_addr}: 404 Not Found");
+                }
 
                 stream.write(response.as_bytes()).unwrap();
                 stream.flush().unwrap();
@@ -55,7 +73,7 @@ fn handle_client(mut stream: TcpStream) {
                 }
             }
             Err (err) => {
-                eprintln!("Error reading from stream {peer_addr}: {err}");
+                eprintln!("{peer_addr}: {err}");
                 break;
             }
         }

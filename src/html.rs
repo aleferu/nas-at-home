@@ -2,15 +2,29 @@
 
 
 pub fn build_body_from_folder(folder_path: &str) -> String {
-    let mut response_body = String::new();
-    response_body.push_str(&html_start_head());
+    let mut response_body = html_start_head();
     response_body.push_str(&folder_name_part(folder_path));
     response_body.push_str(&html_end());
     response_body
 }
 
 
-pub fn html_start_head() -> String {
+pub fn build_body_from_404(failed_path: &str) -> String {
+    let mut response_body = html_start_head();
+    response_body.push_str(&format!(r#"
+<p>Error trying to find {failed_path}.</p>
+<p>If this error should not have happpened, please contact me so I can fix it.</p>
+<div><a href="https://twitter.com/aleferu_"><strong>Twitter</strong></a></div>
+<div><a href="https://github.com/aleferu"><strong>GitHub</strong></a></div>
+<div><a href="https://github.com/aleferu/nas-at-home"><strong>GitHub repo</strong></a></div>
+<p>Maybe go back to <a href="/"><strong>root</strong></a> in the meantime?</p>
+"#));
+    response_body.push_str(&html_end());
+    response_body
+}
+
+
+fn html_start_head() -> String {
     String::from(r#"<!DOCTYPE html>
 <html>
   <head>
@@ -24,7 +38,7 @@ pub fn html_start_head() -> String {
 }
 
 
-pub fn folder_name_part(folder_path: &str) -> String {
+fn folder_name_part(folder_path: &str) -> String {
     let mut current_path = String::from("/");
     let mut result = format!(r#"
 <div>
@@ -42,6 +56,6 @@ pub fn folder_name_part(folder_path: &str) -> String {
 }
 
 
-pub fn html_end() -> String {
+fn html_end() -> String {
     String::from("</body></html>")
 }
