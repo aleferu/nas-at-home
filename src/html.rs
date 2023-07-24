@@ -1,10 +1,20 @@
+use std::{time::SystemTime,
+          ffi::OsString,
+          fs::read_dir};
 
+
+struct Element {
+    name: OsString,
+    last_mod: SystemTime,
+    size: u64
+}
 
 
 pub fn build_body_from_folder(folder_path: &str, order: &str, asc: bool) -> String {
     let mut response_body = html_start_head();
     response_body.push_str(&folder_name_part(folder_path));
     response_body.push_str(&order_by_part(folder_path, order, asc));
+    response_body.push_str(&list_elements(folder_path, order, asc));
     response_body.push_str(&html_end(false));
     response_body
 }
@@ -68,15 +78,97 @@ fn order_by_part(folder_path: &str, order: &str, asc: bool) -> String {
     <th><a href="{folder_path}?order=name&asc={asc_name}">Name</a></th>
     <th><a href="{folder_path}?order=modified&asc={asc_modified}">Last modified</a></th>
     <th><a href="{folder_path}?order=size&asc={asc_size}">Size</a></th>
-  </tr>
-    "#)
+  </tr>"#)
+}
+
+
+fn order_elements_by(v: &mut Vec<Element>, order: &str, asc: bool) {
+    v.sort_by(|a, b| {
+        match order {
+            "modified" => {
+                let mut comparison = a.last_mod.cmp(&b.last_mod);
+                if !asc {
+                    comparison = comparison.reverse();
+                }
+                comparison
+            },
+            "size" => {
+                let mut comparison = a.size.cmp(&b.size);
+                if !asc {
+                    comparison = comparison.reverse();
+                }
+                comparison
+            },
+            "name" | _ => {
+                let mut comparison = a.name.cmp(&b.name);
+                if !asc {
+                    comparison = comparison.reverse();
+                }
+                comparison
+            },
+        }
+    })
+}
+
+
+fn list_elements(folder_path: &str, order: &str, asc: bool) -> String {
+    let real_path = format!(".{folder_path}");
+    let mut directories: Vec<Element> = Vec::new();
+    let mut files: Vec<Element> = Vec::new();
+    for entry in read_dir(real_path).unwrap() {
+        if let Ok(entry) = entry {
+            if let Ok(metadata) = entry.metadata() {
+                if let Ok(last_mod) = metadata.modified() {
+                    if metadata.is_dir() {
+                        directories.push(Element{
+                            name: entry.file_name(), 
+                            last_mod: last_mod, 
+                            size: metadata.len()
+                        });
+                    } else {
+                        files.push(Element{
+                            name: entry.file_name(),
+                            last_mod: last_mod,
+                            size: metadata.len()
+                        });
+                    }
+                }
+            }
+        }
+    }
+    order_elements_by(&mut directories, order, asc);
+    order_elements_by(&mut files, order, asc);
+    let mut result = String::new();
+    for directory in directories {
+        let name = &directory.name.to_str().unwrap();
+        let last_mod = directory.last_mod.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+        result.push_str(&format!(r#"
+<tr>
+  <td><a href="{}/">{}</a></td>
+  <td style="color:#888;">{}</td>
+  <td><bold>{}</bold></td>
+</tr>
+"#, name, name, last_mod, directory.size));
+    }
+    for file in files {
+        let name = &file.name.to_str().unwrap();
+        let last_mod = file.last_mod.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+        result.push_str(&format!(r#"
+<tr>
+  <td><a href="{}/">{}</a></td>
+  <td style="color:#888;">{}</td>
+  <td><bold>{}</bold></td>
+</tr>
+"#, name, name, last_mod, file.size));
+    }
+    result
 }
 
 
 fn html_end(is_404: bool) -> String {
     let mut result = match is_404 {
         true => String::new(),
-        false => String::from("</table>\r\n"),
+        false => String::from("\r\n</table>\r\n"),
     };
     result.push_str("</body>\r\n</html>");
     result
