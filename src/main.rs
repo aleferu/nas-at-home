@@ -28,25 +28,45 @@ fn handle_client(mut stream: TcpStream) {
                 } else {
                     break;
                 }
-                let path_asked: &str;
+                let mut path_asked = String::new();
+                let order: &str;
+                let asc: bool;
                 if let Some(word) = get_line_splitted.next() {
-                    path_asked = word;
+                    let mut word_splitted = word.split("?");
+                    let mut word_splitted_count = word.split("?").count();
+                    if word_splitted_count == 1 {
+                        path_asked.push_str(word);
+                        order = "name";
+                        asc = false;
+                    } else {
+                        let mut last_part = word_splitted.next().unwrap();
+                        word_splitted_count -= 1;
+                        while word_splitted_count != 0 {
+                            path_asked.push_str(last_part);
+                            last_part = word_splitted.next().unwrap();
+                            word_splitted_count -= 1;
+                        }
+                        let mut last_part_splitted = last_part.split("&");
+                        let last_part_splitted_count = last_part.split("&").count();
+                        if last_part_splitted_count != 2 {
+                            order = "name";
+                            asc = false;
+                        } else {
+                            order = last_part_splitted.next().unwrap().split("=").last().unwrap();
+                            asc = match last_part_splitted.next().unwrap().split("=").last().unwrap() {
+                                "true" => true,
+                                "false" | _ => false,
+                            };
+                        }
+                    }
                 } else {
+                    eprintln!("{peer_addr}: something went wrong.");
                     break;
                 }
-
-                println!("{peer_addr}: looking to get \'{path_asked}\' served");
-
-                // let response_body = match metadata(format!(".{path_asked}")).map_err(|err| {
-                //     eprintln!("Error trying to get metadata from .{path_asked} with error: {err}");
-                // }).unwrap().is_dir() {
-                //     true => build_body_from_folder(path_asked),
-                //     false => todo!(),
-                // };
                 let response: String;
                 if let Ok(path_metadata) = metadata(format!(".{path_asked}")) {
                     let response_body = match path_metadata.is_dir() {
-                        true => build_body_from_folder(path_asked),
+                        true => build_body_from_folder(&path_asked, order, asc),
                         false => todo!(),
                     };
                     response = format!(
@@ -54,15 +74,15 @@ fn handle_client(mut stream: TcpStream) {
                         response_body.len(),
                         response_body
                     );
-                    println!("{peer_addr}: 200 OK");
+                    println!("{peer_addr}: 200 OK {path_asked}");
                 } else {
-                    let response_body = build_body_from_404(path_asked);
+                    let response_body = build_body_from_404(&path_asked);
                     response = format!(
                         "HTTP/1.1 404 Not Found\r\nContent-Length: {}\r\n\r\n{}",
                         response_body.len(),
                         response_body
                     );
-                    println!("{peer_addr}: 404 Not Found");
+                    println!("{peer_addr}: 404 Not Found {path_asked}");
                 }
 
                 stream.write(response.as_bytes()).unwrap();
@@ -85,7 +105,7 @@ fn main() {
     let ip = "127.0.0.1";
     let port = "8080";
     let listener = TcpListener::bind(&format!("{ip}:{port}")).unwrap();
-    println!("Server listening with address {ip}:{port}...");
+    println!("Server listening with address {ip}:{port}...\n");
 
     for stream in listener.incoming() {
         match stream {
