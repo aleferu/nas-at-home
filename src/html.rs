@@ -78,6 +78,7 @@ fn order_by_part(folder_path: &str, order: &str, asc: bool) -> String {
     <th><a href="{folder_path}?order=name&asc={asc_name}">Name</a></th>
     <th><a href="{folder_path}?order=modified&asc={asc_modified}">Last modified</a></th>
     <th><a href="{folder_path}?order=size&asc={asc_size}">Size</a></th>
+    <th><a href="{folder_path}?order=size&asc={asc_size}">Real Bytes</a></th>
   </tr>"#)
 }
 
@@ -108,6 +109,18 @@ fn order_elements_by(v: &mut Vec<Element>, order: &str, asc: bool) {
             },
         }
     })
+}
+
+
+fn readable_bytes(bytes: u64) -> String {
+    let mut bytes = bytes as f64;
+    let prefixes = " KMGTPEZY";
+    let mut counter = 0usize;
+    while bytes >= 1024f64 {
+        bytes /= 1024f64;
+        counter += 1;
+    }
+    format!("{} {}B", bytes, prefixes.chars().nth(counter).expect("Biggest file ever."))
 }
 
 
@@ -144,11 +157,12 @@ fn list_elements(folder_path: &str, order: &str, asc: bool) -> String {
         let last_mod = directory.last_mod.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
         result.push_str(&format!(r#"
 <tr>
-  <td><a href="{}/">{}</a></td>
+  <td><a style"font-weight: bold;" href="{}/">{}</a></td>
   <td style="color:#888;">{}</td>
   <td><bold>{}</bold></td>
+  <td><bold>{}</bold></td>
 </tr>
-"#, name, name, last_mod, directory.size));
+"#, name, name, last_mod, readable_bytes(directory.size), directory.size));
     }
     for file in files {
         let name = &file.name.to_str().unwrap();
@@ -158,8 +172,9 @@ fn list_elements(folder_path: &str, order: &str, asc: bool) -> String {
   <td><a href="{}/">{}</a></td>
   <td style="color:#888;">{}</td>
   <td><bold>{}</bold></td>
+  <td><bold>{}</bold></td>
 </tr>
-"#, name, name, last_mod, file.size));
+"#, name, name, last_mod, readable_bytes(file.size), file.size));
     }
     result
 }
