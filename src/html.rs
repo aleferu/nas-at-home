@@ -1,6 +1,7 @@
 use std::{time::SystemTime,
           ffi::OsString,
           fs::read_dir};
+use chrono;
 
 
 struct Element {
@@ -44,7 +45,8 @@ fn html_start_head() -> String {
     <meta name="author" content="aleferu"/>
     <meta http-equiv="cache-control" content="no-cache"/>
     <meta name="viewport" content="width=device-width,initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-    <style> a { text-decoration:none; }</style>
+    <style type="text/css">a { text-decoration:none; color:blue; }</style>
+    <style type="text/css">td { padding: 0 15px; }</style>
   </head>
   <body>"#)
 }
@@ -120,7 +122,17 @@ fn readable_bytes(bytes: u64) -> String {
         bytes /= 1024f64;
         counter += 1;
     }
-    format!("{} {}B", bytes, prefixes.chars().nth(counter).expect("Biggest file ever."))
+    if bytes == bytes.round() {
+        format!("{} {}B", bytes, prefixes.chars().nth(counter).expect("Biggest file ever."))
+    } else {
+        format!("{:.3} {}B", bytes, prefixes.chars().nth(counter).expect("Biggest file ever."))
+    }
+}
+
+
+fn readable_last_mod(last_mod: SystemTime) -> String {
+    let local_last_mod: chrono::DateTime<chrono::Local> = last_mod.into();
+    local_last_mod.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 
@@ -154,27 +166,29 @@ fn list_elements(folder_path: &str, order: &str, asc: bool) -> String {
     let mut result = String::new();
     for directory in directories {
         let name = &directory.name.to_str().unwrap();
-        let last_mod = directory.last_mod.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+        let last_mod = readable_last_mod(directory.last_mod);
+        let bytes = readable_bytes(directory.size);
         result.push_str(&format!(r#"
 <tr>
-  <td><a style"font-weight: bold;" href="{}/">{}</a></td>
+  <td><a style="font-weight: bold;" href="{}/">{}</a></td>
   <td style="color:#888;">{}</td>
   <td><bold>{}</bold></td>
   <td><bold>{}</bold></td>
 </tr>
-"#, name, name, last_mod, readable_bytes(directory.size), directory.size));
+"#, name, name, last_mod, bytes, directory.size));
     }
     for file in files {
         let name = &file.name.to_str().unwrap();
-        let last_mod = file.last_mod.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+        let last_mod = readable_last_mod(file.last_mod);
+        let bytes = readable_bytes(file.size);
         result.push_str(&format!(r#"
 <tr>
-  <td><a href="{}/">{}</a></td>
+  <td><a href="{}">{}</a></td>
   <td style="color:#888;">{}</td>
   <td><bold>{}</bold></td>
   <td><bold>{}</bold></td>
 </tr>
-"#, name, name, last_mod, readable_bytes(file.size), file.size));
+"#, name, name, last_mod, bytes, file.size));
     }
     result
 }
