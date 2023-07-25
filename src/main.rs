@@ -61,6 +61,7 @@ fn handle_client(mut stream: TcpStream) {
         eprintln!("{peer_addr}: something went wrong. Weird request.");
         return
     }
+    let path_asked = path_asked.replace("%20", " ");
     let response: String;
     let mut is_file: bool = false;
     if let Ok(path_metadata) = metadata(format!(".{path_asked}")) {
