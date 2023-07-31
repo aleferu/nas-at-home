@@ -1,16 +1,25 @@
-use crate::html::{build_body_from_folder, build_body_from_404};
+use crate::html::{build_body_from_folder, build_body_from_404, clean_weird_chars};
+
 use std::{io::{Read, Write},
           net::{TcpListener, TcpStream},
           thread,
           fs::{metadata, File}, eprintln,
           time::Duration};
 
+use chrono;
+
 
 mod html;
 
 
+fn formatted_now_date() -> String {
+    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+
 fn handle_client(mut stream: TcpStream) {
-    let peer_addr = stream.peer_addr().unwrap();
+    let peer_addr = stream.peer_addr().unwrap().to_string();
+    let peer_addr = peer_addr.split(":").next().unwrap();
 
     const BUFFER_SIZE: usize = 1024 * 1024;
     const SEND_DELAY: u64 = 5;
@@ -21,8 +30,8 @@ fn handle_client(mut stream: TcpStream) {
     let get_line = request_lines.next().unwrap();
     let mut get_line_splitted = get_line.split(' ');
     if let Some(word) = get_line_splitted.next() {
-        if word != "GET" { 
-            eprintln!("{peer_addr}: Invalid request sent.");
+        if word != "GET" {
+            eprintln!("{date} - {peer_addr}: Invalid request sent.", date = formatted_now_date());
             return
         }
     }
@@ -58,10 +67,10 @@ fn handle_client(mut stream: TcpStream) {
             }
         }
     } else {
-        eprintln!("{peer_addr}: something went wrong. Weird request.");
+        eprintln!("{date} - {peer_addr}: something went wrong. Weird request.", date = formatted_now_date());
         return
     }
-    let path_asked = path_asked.replace("%20", " ");
+    let path_asked = clean_weird_chars(path_asked);
     let response: String;
     let mut is_file: bool = false;
     if let Ok(path_metadata) = metadata(format!(".{path_asked}")) {
@@ -81,7 +90,7 @@ fn handle_client(mut stream: TcpStream) {
             );
             is_file = true;
         }
-        println!("{peer_addr}: 200 OK {path_asked}");
+        println!("{date} - {peer_addr}: 200 OK {path_asked}", date = formatted_now_date());
     } else {
         let response_body = build_body_from_404(&path_asked);
         response = format!(
@@ -89,7 +98,7 @@ fn handle_client(mut stream: TcpStream) {
             response_body.len(),
             response_body
         );
-        println!("{peer_addr}: 404 Not Found {path_asked}");
+        println!("{date} - {peer_addr}: 404 Not Found {path_asked}", date = formatted_now_date());
     }
 
     stream.write(response.as_bytes()).unwrap();
@@ -105,7 +114,7 @@ fn handle_client(mut stream: TcpStream) {
                     thread::sleep(Duration::from_millis(SEND_DELAY));
                 },
                 Err(err) => {
-                    eprintln!("{peer_addr}: Error reading file: {err}");
+                    eprintln!("{date} - {peer_addr}: Error reading file: {err}", date = formatted_now_date());
                     break
                 },
             }
@@ -113,7 +122,7 @@ fn handle_client(mut stream: TcpStream) {
     }
     match stream.flush() {
         Ok(_) => {},
-        Err(err) => { eprintln!("{peer_addr}: {err}"); },
+        Err(err) => { eprintln!("{date} - {peer_addr}: {err}", date = formatted_now_date()); },
     }
 }
 

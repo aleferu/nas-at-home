@@ -4,13 +4,6 @@ use std::{time::SystemTime,
 use chrono;
 
 
-struct Element {
-    name: OsString,
-    last_mod: SystemTime,
-    size: u64
-}
-
-
 pub fn build_body_from_folder(folder_path: &str, order: &str, asc: bool) -> String {
     let mut response_body = html_start_head();
     response_body.push_str(&folder_name_part(folder_path));
@@ -33,6 +26,42 @@ pub fn build_body_from_404(failed_path: &str) -> String {
 "#));
     response_body.push_str(&html_end(true));
     response_body
+}
+
+
+// Thanks ChatGPT
+pub fn clean_weird_chars(input: String) -> String{
+    let mut decoded_string = String::new();
+    let mut bytes = Vec::new();
+
+    let mut chars = input.chars();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let hex_str: String = chars.by_ref().take(2).collect();
+            if let Ok(byte) = u8::from_str_radix(&hex_str, 16) {
+                bytes.push(byte);
+            }
+        } else {
+            if !bytes.is_empty() {
+                decoded_string.push_str(&String::from_utf8_lossy(&bytes));
+                bytes.clear();
+            }
+            decoded_string.push(c);
+        }
+    }
+
+    if !bytes.is_empty() {
+        decoded_string.push_str(&String::from_utf8_lossy(&bytes));
+    }
+
+    decoded_string
+}
+
+
+struct Element {
+    name: OsString,
+    last_mod: SystemTime,
+    size: u64
 }
 
 
