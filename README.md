@@ -31,6 +31,8 @@ But the idea is to move the binary to the folder where you want the server (at l
 ## TODO
 
 - Previsualize images.
+- Previsualize text files.
+- Previsualize pdfs.
 - IP + port.
 - Specify start folder.
 - Maybe https.
