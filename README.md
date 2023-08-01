@@ -1,4 +1,4 @@
-# NAS-at-home
+# nas-at-home
 
 **HIGHLY** inspired by [TheWaWaR](https://github.com/TheWaWaR)'s version of the software: [simple-http-server](https://github.com/TheWaWaR/simple-http-server). Please make sure to take a look at his work before looking more into mine.
 
@@ -16,24 +16,44 @@ There are things I want to add, but it works.
 ## Installation
 
 ```sh
-cargo build --release
+$ cargo build --release
 ```
 
 ## Usage
 
-You either run the program using the following command:
+You can run the program using the following command:
 ```sh
-cargo run --release
+$ cargo run --release
 ```
 
-But the idea is to move the binary to the folder where you want the server (at least for now).
+Help text:
+```sh
+$ nas-at-home --help
+Usage: nas-at-home [FLAGS] [OPTIONS]
 
-## TODO
+FLAGS:
+    --help     Prints this, nothing else happens.
+OPTIONS
+    -ip        Sets the ip for the TCP Listener, 127.0.0.1 is the default value.
+               Example: -ip 127.0.0.1
+    -port      Sets the port for the TCP Listener, 8080 is the default value
+               Example: -port 8080
+```
 
-- Previsualize images.
-- Previsualize text files.
-- Previsualize pdfs.
-- IP + port.
+An example would be:
+```sh
+$ nas-at-home -ip 127.0.0.1 -port 8080
+```
+
+The idea is to move the binary to the folder where you want the server (at least for now).
+
+## TODOs
+
 - Specify start folder.
 - Maybe https.
 - I don't know hot to setup passwords but it's an idea.
+- Upload?
+
+## Contact
+
+Feel free to contact me if you encounter any issue.

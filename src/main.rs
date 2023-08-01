@@ -1,4 +1,5 @@
-use crate::html::{build_body_from_folder, build_body_from_404, clean_weird_chars};
+use crate::{html::{build_body_from_folder, build_body_from_404, clean_weird_chars},
+            args_reader::*};
 
 use std::{io::{Read, Write},
           net::{TcpListener, TcpStream},
@@ -10,6 +11,7 @@ use chrono;
 
 
 mod html;
+mod args_reader;
 
 
 fn formatted_now_date() -> String {
@@ -128,19 +130,32 @@ fn handle_client(mut stream: TcpStream) {
 
 
 fn main() {
-    let ip = "127.0.0.1";
-    let port = "8080";
-    let listener = TcpListener::bind(&format!("{ip}:{port}")).unwrap();
-    println!("Server listening with address {ip}:{port}...\n");
+    if look_for_flag("help") {
+        println!("Usage: nas-at-home [FLAGS] [OPTIONS]");
+        println!();
+        println!("FLAGS:");
+        println!("    --help     Prints this, nothing else happens.");
+        println!("OPTIONS");
+        println!("    -ip        Sets the ip for the TCP Listener, 127.0.0.1 is the default value.");
+        println!("               Example: -ip 127.0.0.1");
+        println!("    -port      Sets the port for the TCP Listener, 8080 is the default value");
+        println!("               Example: -port 8080");
+        println!();
+    } else {
+        let ip = look_for_option("ip").unwrap_or("127.0.0.1".to_string());
+        let port = look_for_option("port").unwrap_or("8080".to_string());
+        match TcpListener::bind(&format!("{ip}:{port}")) {
+            Ok(listener) => {
+                println!("Server listening with address {ip}:{port}...\n");
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                thread::spawn(|| handle_client(stream));
+                for stream in listener.incoming() {
+                    match stream {
+                        Ok(stream) => { thread::spawn(|| handle_client(stream)); }
+                        Err(err) => { eprintln!("Error: {err}"); }
+                    }
+                }
             }
-            Err(e) => {
-                eprintln!("Error: {}", e);
-            }
+            Err(err) => { eprintln!("Error trying to create the server: {err}") }
         }
     }
 }
