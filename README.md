@@ -4,9 +4,9 @@
 
 My goal is to build something similar without taking a look at his code (I can look at the html my browser receives). Bare in mind this is my first time using http (or https if I end up implementing it) and/or html + css...
 
-## Usable, but not finished
+## State of development
 
-There are things I want to add, but it works.
+Downloads works, uploads are yet to be implemented (I currently don't even know how to start with that).
 
 ## Dependencies
 
@@ -15,19 +15,19 @@ There are things I want to add, but it works.
 
 ## Installation
 
-```sh
+```console
 $ cargo build --release
 ```
 
 ## Usage
 
 You can run the program using the following command:
-```sh
+```console
 $ cargo run --release
 ```
 
 Help text:
-```sh
+```console
 $ nas-at-home --help
 Usage: nas-at-home [FLAGS] [OPTIONS]
 
@@ -43,7 +43,7 @@ OPTIONS
 ```
 
 An example would be:
-```sh
+```console
 $ nas-at-home --ip 127.0.0.1 --port 8080 --path /home/user/
 ```
 
@@ -51,9 +51,11 @@ If you dont specify a custom path, the current folder will be selected as root.
 
 ## TODOs
 
+Priority: top to bottom.
+
+- Upload?
 - Maybe https.
 - I don't know hot to setup passwords but it's an idea.
-- Upload?
 
 ## Contact
 
