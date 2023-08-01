@@ -13,12 +13,12 @@ pub fn look_for_flag(flag_name: &str) -> bool {
 
 
 pub fn look_for_option(setting_name: &str) -> Option<String> {
-    let setting_name = format!("-{setting_name}");
+    let setting_name = format!("--{setting_name}");
     let mut args = env::args().into_iter();
     while let Some(arg) = args.next() {
         if arg == setting_name {
             if let Some(setting) = args.next(){
-                if setting.starts_with('-') { return None; }
+                if setting.starts_with("--") { return None; }
                 return Some(setting);
             } else {
                 return None;

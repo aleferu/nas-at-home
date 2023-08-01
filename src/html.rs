@@ -7,7 +7,7 @@ use chrono;
 pub fn build_body_from_folder(folder_path: &str, order: &str, asc: bool) -> String {
     let mut response_body = html_start_head();
     response_body.push_str(&folder_name_part(folder_path));
-    response_body.push_str(&order_by_part(folder_path, order, asc));
+    response_body.push_str(&order_by_part(order, asc));
     response_body.push_str(&list_elements(folder_path, order, asc));
     response_body.push_str(&html_end(false));
     response_body
@@ -29,7 +29,6 @@ pub fn build_body_from_404(failed_path: &str) -> String {
 }
 
 
-// Thanks ChatGPT
 pub fn clean_weird_chars(input: String) -> String{
     let mut decoded_string = String::new();
     let mut bytes = Vec::new();
@@ -37,9 +36,18 @@ pub fn clean_weird_chars(input: String) -> String{
     let mut chars = input.chars();
     while let Some(c) = chars.next() {
         if c == '%' {
-            let hex_str: String = chars.by_ref().take(2).collect();
-            if let Ok(byte) = u8::from_str_radix(&hex_str, 16) {
-                bytes.push(byte);
+            let chars_clone = chars.clone();
+            let next_char: String = chars_clone.take(1).collect();
+            if next_char == "%" {
+                decoded_string.push(c);
+            } else {
+                let hex_str: String = chars.by_ref().take(2).collect();
+                if let Ok(byte) = u8::from_str_radix(&hex_str, 16) {
+                    bytes.push(byte);
+                } else {
+                    decoded_string.push(c);
+                    decoded_string.push_str(&hex_str);
+                }
             }
         } else {
             if !bytes.is_empty() {
@@ -87,7 +95,8 @@ fn folder_name_part(folder_path: &str) -> String {
 <div>
   <a href="{current_path}"><strong>ROOT</strong></a>
     "#);
-    let folder_path_splitted = folder_path.split('/');
+    let mut folder_path_splitted = folder_path.split('/');
+    folder_path_splitted.next();
     for folder in folder_path_splitted {
         if folder == "" { continue }
         current_path.push_str(&format!("{folder}/"));
@@ -99,17 +108,17 @@ fn folder_name_part(folder_path: &str) -> String {
 }
 
 
-fn order_by_part(folder_path: &str, order: &str, asc: bool) -> String {
+fn order_by_part(order: &str, asc: bool) -> String {
     let asc_name = if order == "name" { (!asc).to_string() } else { "false".to_string() };
     let asc_modified = if order == "modified" { (!asc).to_string() } else { "false".to_string() };
     let asc_size = if order == "size" { (!asc).to_string() } else { "false".to_string() };
     format!(r#"
 <table>
   <tr>
-    <th><a href="{folder_path}?order=name&asc={asc_name}">Name</a></th>
-    <th><a href="{folder_path}?order=modified&asc={asc_modified}">Last modified</a></th>
-    <th><a href="{folder_path}?order=size&asc={asc_size}">Size</a></th>
-    <th><a href="{folder_path}?order=size&asc={asc_size}">Real Bytes</a></th>
+    <th><a href="?order=name&asc={asc_name}">Name</a></th>
+    <th><a href="?order=modified&asc={asc_modified}">Last modified</a></th>
+    <th><a href="?order=size&asc={asc_size}">Size</a></th>
+    <th><a href="?order=size&asc={asc_size}">Real Bytes</a></th>
   </tr>"#)
 }
 
@@ -166,10 +175,9 @@ fn readable_last_mod(last_mod: SystemTime) -> String {
 
 
 fn list_elements(folder_path: &str, order: &str, asc: bool) -> String {
-    let real_path = format!(".{folder_path}");
     let mut directories: Vec<Element> = Vec::new();
     let mut files: Vec<Element> = Vec::new();
-    for entry in read_dir(real_path).unwrap() {
+    for entry in read_dir(folder_path).unwrap() {
         if let Ok(entry) = entry {
             if let Ok(metadata) = entry.metadata() {
                 if let Ok(last_mod) = metadata.modified() {

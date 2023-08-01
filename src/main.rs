@@ -19,7 +19,7 @@ fn formatted_now_date() -> String {
 }
 
 
-fn handle_client(mut stream: TcpStream) {
+fn handle_client(mut stream: TcpStream, starting_path: String) {
     let peer_addr = stream.peer_addr().unwrap().to_string();
     let peer_addr = peer_addr.split(":").next().unwrap();
 
@@ -37,7 +37,7 @@ fn handle_client(mut stream: TcpStream) {
             return
         }
     }
-    let mut path_asked = String::new();
+    let mut path_asked = starting_path.clone();
     let order: &str;
     let asc: bool;
     if let Some(word) = get_line_splitted.next() {
@@ -75,7 +75,7 @@ fn handle_client(mut stream: TcpStream) {
     let path_asked = clean_weird_chars(path_asked);
     let response: String;
     let mut is_file: bool = false;
-    if let Ok(path_metadata) = metadata(format!(".{path_asked}")) {
+    if let Ok(path_metadata) = metadata(&path_asked) {
         if path_metadata.is_dir() {
             let response_body = build_body_from_folder(&path_asked, order, asc);
             response = format!(
@@ -105,7 +105,7 @@ fn handle_client(mut stream: TcpStream) {
 
     stream.write(response.as_bytes()).unwrap();
     if is_file { 
-        let mut file = File::open(format!(".{path_asked}")).unwrap();
+        let mut file = File::open(format!("{path_asked}")).unwrap();
         loop {
             match file.read(&mut buffer) {
                 Ok(0) => break,
@@ -136,22 +136,32 @@ fn main() {
         println!("FLAGS:");
         println!("    --help     Prints this, nothing else happens.");
         println!("OPTIONS");
-        println!("    -ip        Sets the ip for the TCP Listener, 127.0.0.1 is the default value.");
-        println!("               Example: -ip 127.0.0.1");
-        println!("    -port      Sets the port for the TCP Listener, 8080 is the default value");
-        println!("               Example: -port 8080");
+        println!("    --ip      Sets the ip for the TCP Listener, 127.0.0.1 is the default value.");
+        println!("              Example: --ip 127.0.0.1");
+        println!("    --port    Sets the port for the TCP Listener, 8080 is the default value.");
+        println!("              Example: --port 8080");
+        println!("    --path    Sets the root folder, . is the default value.");
+        println!("              Example: --path ./src/");
         println!();
     } else {
         let ip = look_for_option("ip").unwrap_or("127.0.0.1".to_string());
         let port = look_for_option("port").unwrap_or("8080".to_string());
+        let mut starting_path = look_for_option("path").unwrap_or(".".to_string());
+        if starting_path != "/" && starting_path.ends_with("/") {
+            starting_path = starting_path[..starting_path.len() - 1].to_string();
+        }
         match TcpListener::bind(&format!("{ip}:{port}")) {
             Ok(listener) => {
                 println!("Server listening with address {ip}:{port}...\n");
+                println!("Server started at path {starting_path}");
 
                 for stream in listener.incoming() {
                     match stream {
-                        Ok(stream) => { thread::spawn(|| handle_client(stream)); }
-                        Err(err) => { eprintln!("Error: {err}"); }
+                        Ok(stream) => { 
+                            let starting_path_clone = starting_path.clone();
+                            thread::spawn(|| handle_client(stream, starting_path_clone)); 
+                        }
+                        Err(err) => { eprintln!("Error handling an incoming stream: {err}"); }
                     }
                 }
             }
