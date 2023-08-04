@@ -6,7 +6,7 @@ My goal is to build something similar without taking a look at his code (I can l
 
 ## State of development
 
-Downloads works, uploads are yet to be implemented (I currently don't even know how to start with that).
+It is apparently broken, I'll fix it in a few days.
 
 ## Dependencies
 
