@@ -4,9 +4,12 @@ use std::{time::SystemTime,
 use chrono;
 
 
-pub fn build_body_from_folder(folder_path: &str, order: &str, asc: bool) -> String {
+pub fn build_body_from_folder(starting_path: &str, folder_path: &str, order: &str, asc: bool, upload: bool) -> String {
     let mut response_body = html_start_head();
-    response_body.push_str(&folder_name_part(folder_path));
+    if upload {
+        response_body.push_str(&upload_part(folder_path));
+    }
+    response_body.push_str(&folder_name_part(starting_path, folder_path));
     response_body.push_str(&order_by_part(order, asc));
     response_body.push_str(&list_elements(folder_path, order, asc));
     response_body.push_str(&html_end(false));
@@ -89,14 +92,29 @@ fn html_start_head() -> String {
 }
 
 
-fn folder_name_part(folder_path: &str) -> String {
+// TODO
+fn upload_part(_folder_path: &str) -> String {
+    String::from(r#"
+<form style="margin-top:1em; margin-bottom:1em;" action="
+"#)
+}
+
+
+fn folder_name_part(starting_path: &str, folder_path: &str) -> String {
     let mut current_path = String::from("/");
     let mut result = format!(r#"
 <div>
   <a href="{current_path}"><strong>ROOT</strong></a>
     "#);
     let mut folder_path_splitted = folder_path.split('/');
-    folder_path_splitted.next();
+    if starting_path.starts_with('/') {
+        let mut starting_path_splitted = starting_path.split('/');
+        while let Some(_) = starting_path_splitted.next() {
+            folder_path_splitted.next();
+        }
+    } else {
+        folder_path_splitted.next();
+    }
     for folder in folder_path_splitted {
         if folder == "" { continue }
         current_path.push_str(&format!("{folder}/"));
@@ -118,7 +136,7 @@ fn order_by_part(order: &str, asc: bool) -> String {
     <th><a href="?order=name&asc={asc_name}">Name</a></th>
     <th><a href="?order=modified&asc={asc_modified}">Last modified</a></th>
     <th><a href="?order=size&asc={asc_size}">Size</a></th>
-    <th><a href="?order=size&asc={asc_size}">Real Bytes</a></th>
+    <th><a href="?order=size&asc={asc_size}">Real Byte Count</a></th>
   </tr>"#)
 }
 
@@ -175,37 +193,41 @@ fn readable_last_mod(last_mod: SystemTime) -> String {
 
 
 fn list_elements(folder_path: &str, order: &str, asc: bool) -> String {
-    let mut directories: Vec<Element> = Vec::new();
-    let mut files: Vec<Element> = Vec::new();
-    for entry in read_dir(folder_path).unwrap() {
-        if let Ok(entry) = entry {
-            if let Ok(metadata) = entry.metadata() {
-                if let Ok(last_mod) = metadata.modified() {
-                    if metadata.is_dir() {
-                        directories.push(Element{
-                            name: entry.file_name(), 
-                            last_mod: last_mod, 
-                            size: metadata.len()
-                        });
-                    } else {
-                        files.push(Element{
-                            name: entry.file_name(),
-                            last_mod: last_mod,
-                            size: metadata.len()
-                        });
+    match read_dir(folder_path) {
+        Ok(mut entries) => {
+            let mut directories: Vec<Element> = Vec::new();
+            let mut files: Vec<Element> = Vec::new();
+            while let Some(entry) = entries.next() {
+                if entry.is_err() {
+                    continue
+                }
+                let entry = entry.unwrap();
+                if let Ok(metadata) = entry.metadata() {
+                    if let Ok(last_mod) = metadata.modified() {
+                        if metadata.is_dir() {
+                            directories.push(Element{
+                                name: entry.file_name(), 
+                                last_mod: last_mod, 
+                                size: metadata.len()
+                            });
+                        } else {
+                            files.push(Element{
+                                name: entry.file_name(),
+                                last_mod: last_mod,
+                                size: metadata.len()
+                            });
+                        }
                     }
                 }
             }
-        }
-    }
-    order_elements_by(&mut directories, order, asc);
-    order_elements_by(&mut files, order, asc);
-    let mut result = String::new();
-    for directory in directories {
-        let name = &directory.name.to_str().unwrap();
-        let last_mod = readable_last_mod(directory.last_mod);
-        let bytes = readable_bytes(directory.size);
-        result.push_str(&format!(r#"
+            order_elements_by(&mut directories, order, asc);
+            order_elements_by(&mut files, order, asc);
+            let mut result = String::new();
+            for directory in directories {
+                let name = &directory.name.to_str().unwrap();
+                let last_mod = readable_last_mod(directory.last_mod);
+                let bytes = readable_bytes(directory.size);
+                result.push_str(&format!(r#"
 <tr>
   <td><a style="font-weight: bold;" href="{}/">{}</a></td>
   <td style="color:#888;">{}</td>
@@ -213,12 +235,12 @@ fn list_elements(folder_path: &str, order: &str, asc: bool) -> String {
   <td><bold>{}</bold></td>
 </tr>
 "#, name, name, last_mod, bytes, directory.size));
-    }
-    for file in files {
-        let name = &file.name.to_str().unwrap();
-        let last_mod = readable_last_mod(file.last_mod);
-        let bytes = readable_bytes(file.size);
-        result.push_str(&format!(r#"
+            }
+            for file in files {
+                let name = &file.name.to_str().unwrap();
+                let last_mod = readable_last_mod(file.last_mod);
+                let bytes = readable_bytes(file.size);
+                result.push_str(&format!(r#"
 <tr>
   <td><a href="{}">{}</a></td>
   <td style="color:#888;">{}</td>
@@ -226,8 +248,15 @@ fn list_elements(folder_path: &str, order: &str, asc: bool) -> String {
   <td><bold>{}</bold></td>
 </tr>
 "#, name, name, last_mod, bytes, file.size));
+            }
+            result
+        },
+        Err(err) => {
+            eprintln!("Error trying to get the entries of the following path: {folder_path}");
+            eprintln!("Error given by the system: {err}");
+            String::from("")
+        }
     }
-    result
 }
 
 

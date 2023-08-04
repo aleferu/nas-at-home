@@ -19,9 +19,9 @@ fn formatted_now_date() -> String {
 }
 
 
-fn handle_client(mut stream: TcpStream, starting_path: String) {
+fn handle_client(mut stream: TcpStream, starting_path: String, upload: bool) {
     let peer_addr = stream.peer_addr().unwrap().to_string();
-    let peer_addr = peer_addr.split(":").next().unwrap();
+    let peer_ip = peer_addr.split(":").next().unwrap();
 
     const BUFFER_SIZE: usize = 1024 * 1024;
     const SEND_DELAY: u64 = 5;
@@ -33,7 +33,7 @@ fn handle_client(mut stream: TcpStream, starting_path: String) {
     let mut get_line_splitted = get_line.split(' ');
     if let Some(word) = get_line_splitted.next() {
         if word != "GET" {
-            eprintln!("{date} - {peer_addr}: Invalid request sent.", date = formatted_now_date());
+            eprintln!("{date} - {peer_ip}: Invalid request received.", date = formatted_now_date());
             return
         }
     }
@@ -46,7 +46,7 @@ fn handle_client(mut stream: TcpStream, starting_path: String) {
         if word_splitted_count == 1 {
             path_asked.push_str(word);
             order = "name";
-            asc = false;
+            asc = true;
         } else {
             let mut last_part = word_splitted.next().unwrap();
             word_splitted_count -= 1;
@@ -59,7 +59,7 @@ fn handle_client(mut stream: TcpStream, starting_path: String) {
             let last_part_splitted_count = last_part.split("&").count();
             if last_part_splitted_count != 2 {
                 order = "name";
-                asc = false;
+                asc = true;
             } else {
                 order = last_part_splitted.next().unwrap().split("=").last().unwrap();
                 asc = match last_part_splitted.next().unwrap().split("=").last().unwrap() {
@@ -69,7 +69,7 @@ fn handle_client(mut stream: TcpStream, starting_path: String) {
             }
         }
     } else {
-        eprintln!("{date} - {peer_addr}: something went wrong. Weird request.", date = formatted_now_date());
+        eprintln!("{date} - {peer_ip}: something went wrong. Weird request.", date = formatted_now_date());
         return
     }
     let path_asked = clean_weird_chars(path_asked);
@@ -77,7 +77,7 @@ fn handle_client(mut stream: TcpStream, starting_path: String) {
     let mut is_file: bool = false;
     if let Ok(path_metadata) = metadata(&path_asked) {
         if path_metadata.is_dir() {
-            let response_body = build_body_from_folder(&path_asked, order, asc);
+            let response_body = build_body_from_folder(&starting_path, &path_asked, order, asc, upload);
             response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/html; charset=utf-8\r\n\r\n{}",
                 response_body.len(),
@@ -92,7 +92,7 @@ fn handle_client(mut stream: TcpStream, starting_path: String) {
             );
             is_file = true;
         }
-        println!("{date} - {peer_addr}: 200 OK {path_asked}", date = formatted_now_date());
+        println!("{date} - {peer_ip}: 200 OK {path_asked}", date = formatted_now_date());
     } else {
         let response_body = build_body_from_404(&path_asked);
         response = format!(
@@ -100,10 +100,12 @@ fn handle_client(mut stream: TcpStream, starting_path: String) {
             response_body.len(),
             response_body
         );
-        println!("{date} - {peer_addr}: 404 Not Found {path_asked}", date = formatted_now_date());
+        println!("{date} - {peer_ip}: 404 Not Found {path_asked}", date = formatted_now_date());
     }
 
-    stream.write(response.as_bytes()).unwrap();
+    stream.write_all(response.as_bytes()).map_err(|err| {
+        eprintln!("{peer_ip}: {err}");
+    }).unwrap();
     if is_file { 
         let mut file = File::open(format!("{path_asked}")).unwrap();
         loop {
@@ -111,12 +113,12 @@ fn handle_client(mut stream: TcpStream, starting_path: String) {
                 Ok(0) => break,
                 Ok(bytes_read) => {
                     stream.write_all(&buffer[..bytes_read]).map_err(|err| {
-                        eprintln!("{peer_addr}: {err}");
+                        eprintln!("{peer_ip}: {err}");
                     }).unwrap();
                     thread::sleep(Duration::from_millis(SEND_DELAY));
                 },
                 Err(err) => {
-                    eprintln!("{date} - {peer_addr}: Error reading file: {err}", date = formatted_now_date());
+                    eprintln!("{date} - {peer_ip}: Error reading file: {err}", date = formatted_now_date());
                     break
                 },
             }
@@ -124,7 +126,7 @@ fn handle_client(mut stream: TcpStream, starting_path: String) {
     }
     match stream.flush() {
         Ok(_) => {},
-        Err(err) => { eprintln!("{date} - {peer_addr}: {err}", date = formatted_now_date()); },
+        Err(err) => { eprintln!("{date} - {peer_ip}: {err}", date = formatted_now_date()); },
     }
 }
 
@@ -134,14 +136,16 @@ fn main() {
         println!("Usage: nas-at-home [FLAGS] [OPTIONS]");
         println!();
         println!("FLAGS:");
-        println!("    --help     Prints this, nothing else happens.");
+        println!("  --help   Prints this, nothing else happens.");
         println!("OPTIONS");
-        println!("    --ip      Sets the ip for the TCP Listener, 127.0.0.1 is the default value.");
-        println!("              Example: --ip 127.0.0.1");
-        println!("    --port    Sets the port for the TCP Listener, 8080 is the default value.");
-        println!("              Example: --port 8080");
-        println!("    --path    Sets the root folder, . is the default value.");
-        println!("              Example: --path ./src/");
+        println!("  --ip      Sets the ip for the TCP Listener, 127.0.0.1 is the default value.");
+        println!("            Example: --ip 127.0.0.1");
+        println!("  --port    Sets the port for the TCP Listener, 8080 is the default value.");
+        println!("            Example: --port 8080");
+        println!("  --path    Sets the root folder, . is the default value.");
+        println!("            Example: --path /home/");
+        println!("  --upload  Gives the client the ability to upload files.");
+        println!("            NOT IMPLEMENTED, DOES NOTHING AT THE MOMENT.");
         println!();
     } else {
         let ip = look_for_option("ip").unwrap_or("127.0.0.1".to_string());
@@ -150,6 +154,23 @@ fn main() {
         if starting_path != "/" && starting_path.ends_with("/") {
             starting_path = starting_path[..starting_path.len() - 1].to_string();
         }
+        if cfg!(windows) && starting_path == "/" {
+            eprintln!("Not a linux system. Please try a different path");
+            return ()
+        }
+        if let Ok(path_metadata) = metadata(&starting_path) {
+            println!("{:?}", path_metadata);
+            if !path_metadata.is_dir() {
+                eprintln!("Could not start the server using the following path: {starting_path}");
+                eprintln!("Is it a folder?");
+                return ()
+            }
+        } else {
+            eprintln!("Could not start the server using the following path: {starting_path}");
+            eprintln!("Is it a valid path?");
+            return ()
+        }
+        let upload = look_for_flag("upload");
         match TcpListener::bind(&format!("{ip}:{port}")) {
             Ok(listener) => {
                 println!("Server listening with address {ip}:{port}...\n");
@@ -159,7 +180,7 @@ fn main() {
                     match stream {
                         Ok(stream) => { 
                             let starting_path_clone = starting_path.clone();
-                            thread::spawn(|| handle_client(stream, starting_path_clone)); 
+                            thread::spawn(move || handle_client(stream, starting_path_clone, upload)); 
                         }
                         Err(err) => { eprintln!("Error handling an incoming stream: {err}"); }
                     }
