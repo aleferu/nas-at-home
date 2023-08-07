@@ -159,7 +159,6 @@ fn main() {
             return ()
         }
         if let Ok(path_metadata) = metadata(&starting_path) {
-            println!("{:?}", path_metadata);
             if !path_metadata.is_dir() {
                 eprintln!("Could not start the server using the following path: {starting_path}");
                 eprintln!("Is it a folder?");
