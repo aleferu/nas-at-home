@@ -12,6 +12,7 @@ Downloads works, uploads are yet to be implemented (I currently don't even know 
 
 - [Rust](https://www.rust-lang.org/)
 - [chrono](https://docs.rs/chrono/latest/chrono/) crate.
+- [lazy_static](https://docs.rs/lazy_static/latest/lazy_static/) crate.
 
 ## Installation
 
