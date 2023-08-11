@@ -5,9 +5,17 @@ use std::{io::{Read, Write},
           net::{TcpListener, TcpStream},
           thread,
           fs::{metadata, File}, eprintln,
-          time::Duration};
+          time::Duration,
+          sync::Mutex,
+          collections::HashMap, unimplemented};
+use core::str::Split;
 
 use chrono;
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref LAST_PATH_ASKED: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
+}
 
 
 mod html;
@@ -19,24 +27,14 @@ fn formatted_now_date() -> String {
 }
 
 
-fn handle_client(mut stream: TcpStream, starting_path: String, upload: bool) {
-    let peer_addr = stream.peer_addr().unwrap().to_string();
-    let peer_ip = peer_addr.split(":").next().unwrap();
-
-    const BUFFER_SIZE: usize = 1024 * 1024;
-    const SEND_DELAY: u64 = 5;
-    let mut buffer = [0u8; BUFFER_SIZE];
-    stream.read(&mut buffer).unwrap();
-    let full_request: String = String::from_utf8_lossy(&buffer).to_string();
-    let mut request_lines = full_request.lines();
-    let get_line = request_lines.next().unwrap();
-    let mut get_line_splitted = get_line.split(' ');
-    if let Some(word) = get_line_splitted.next() {
-        if word != "GET" {
-            eprintln!("{date} - {peer_ip}: Invalid request received.", date = formatted_now_date());
-            return
-        }
-    }
+fn handle_get_request(
+    mut stream: TcpStream, 
+    starting_path: String, 
+    upload: bool, 
+    peer_ip: &str, 
+    buffer: &mut [u8], 
+    get_line_splitted: &mut Split<char>
+) {
     let mut path_asked = starting_path.clone();
     let order: &str;
     let asc: bool;
@@ -73,13 +71,14 @@ fn handle_client(mut stream: TcpStream, starting_path: String, upload: bool) {
         return
     }
     let path_asked = clean_weird_chars(path_asked);
+    LAST_PATH_ASKED.lock().unwrap().insert(peer_ip.to_string(), path_asked.clone());
     let response: String;
     let mut is_file: bool = false;
     if let Ok(path_metadata) = metadata(&path_asked) {
         if path_metadata.is_dir() {
             let response_body = build_body_from_folder(&starting_path, &path_asked, order, asc, upload);
             response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/html; charset=utf-8\r\n\r\n{}",
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-cache, no-store, must-revalidate\r\nPragma: no-cache\r\nExpires: 0\r\n\r\n{}",
                 response_body.len(),
                 response_body
             );
@@ -106,16 +105,17 @@ fn handle_client(mut stream: TcpStream, starting_path: String, upload: bool) {
     stream.write_all(response.as_bytes()).map_err(|err| {
         eprintln!("{peer_ip}: {err}");
     }).unwrap();
-    if is_file { 
+    if is_file {
+        let send_delay = 5;
         let mut file = File::open(format!("{path_asked}")).unwrap();
         loop {
-            match file.read(&mut buffer) {
+            match file.read(buffer) {
                 Ok(0) => break,
                 Ok(bytes_read) => {
                     stream.write_all(&buffer[..bytes_read]).map_err(|err| {
                         eprintln!("{peer_ip}: {err}");
                     }).unwrap();
-                    thread::sleep(Duration::from_millis(SEND_DELAY));
+                    thread::sleep(Duration::from_millis(send_delay));
                 },
                 Err(err) => {
                     eprintln!("{date} - {peer_ip}: Error reading file: {err}", date = formatted_now_date());
@@ -127,6 +127,50 @@ fn handle_client(mut stream: TcpStream, starting_path: String, upload: bool) {
     match stream.flush() {
         Ok(_) => {},
         Err(err) => { eprintln!("{date} - {peer_ip}: {err}", date = formatted_now_date()); },
+    }
+}
+
+
+fn handle_post_request() {
+    unimplemented!()
+}
+
+
+fn handle_client(mut stream: TcpStream, starting_path: String, upload: bool) {
+    let peer_addr = stream.peer_addr().unwrap().to_string();
+    let peer_ip = peer_addr.split(":").next().unwrap();
+
+    const BUFFER_SIZE: usize = 1024 * 1024;
+    let mut buffer = [0u8; BUFFER_SIZE];
+    stream.read(&mut buffer).unwrap();
+    let full_request: String = String::from_utf8_lossy(&buffer).to_string();
+    let mut request_lines = full_request.lines();
+    let get_line = request_lines.next().unwrap();
+    let mut get_line_splitted = get_line.split(' ');
+    match get_line_splitted.next() {
+        Some(word) => {
+            match word {
+                "GET" => handle_get_request(stream, starting_path, upload, peer_ip, &mut buffer, &mut get_line_splitted),
+                "POST" => {
+                    match LAST_PATH_ASKED.lock().unwrap().get(peer_ip) {
+                        Some(_) => {
+                            handle_post_request();
+                        }
+                        None => {
+                            eprintln!("{date} - {peer_ip}: Invalid POST request, never served before.\nMaybe trying to hack the server.", date = formatted_now_date());
+                        },
+                    }
+                },
+                _ => {
+                    eprintln!("{date} - {peer_ip}: Invalid request received.", date = formatted_now_date());
+                    return
+                } 
+            }
+        }
+        None => {
+            eprintln!("{date} - {peer_ip}: Invalid request received.", date = formatted_now_date());
+            return
+        }
     }
 }
 

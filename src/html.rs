@@ -7,7 +7,7 @@ use chrono;
 pub fn build_body_from_folder(starting_path: &str, folder_path: &str, order: &str, asc: bool, upload: bool) -> String {
     let mut response_body = html_start_head();
     if upload {
-        response_body.push_str(&upload_part(folder_path));
+        response_body.push_str(&upload_part());
     }
     response_body.push_str(&folder_name_part(starting_path, folder_path));
     response_body.push_str(&order_by_part(order, asc));
@@ -93,9 +93,12 @@ fn html_start_head() -> String {
 
 
 // TODO
-fn upload_part(_folder_path: &str) -> String {
-    String::from(r#"
-<form style="margin-top:1em; margin-bottom:1em;" action="
+fn upload_part() -> String {
+    format!(r#"
+<form style="margin-top:1em; margin-bottom:1em;" method="POST" enctype="multipart/form-data">
+  <input type="file" name="files" accept="*" multiple />
+  <input type="submit" value"Upload" />
+</form>
 "#)
 }
 
