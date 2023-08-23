@@ -34,26 +34,25 @@ $ ./nas-at-home --help
 Usage: nas-at-home [FLAGS] [OPTIONS]
 
 FLAGS:
-    --help     Prints this, nothing else happens.
-OPTIONS
-    --ip      Sets the ip for the TCP Listener, 127.0.0.1 is the default value.
-              Example: --ip 127.0.0.1
-    --port    Sets the port for the TCP Listener, 8080 is the default value.
-              Example: --port 8080
-    --path    Sets the root folder, . is the default value.
-              Example: --path ./src/
+  --help     Prints this, nothing else happens.
+OPTIONS");
+  --ip       Sets the ip for the TCP Listener, 127.0.0.1 is the default value.
+             Example: --ip 127.0.0.1
+  --port     Sets the port for the TCP Listener, 8080 is the default value.
+             Example: --port 8080
+  --path     Sets the root folder, . is the default value.
+             Example: --path /home/
+  --threads  Sets the number of threads in the thread pool.
+             Example: --threads 5
+             Number of physical cpus is the default value.
 ```
 
 An example would be:
 ```console
-$ ./nas-at-home --ip 127.0.0.1 --port 8080 --path /home/user/
+$ ./nas-at-home --ip 127.0.0.1 --port 8080 --path /home/user/ --threads 10
 ```
 
 If you dont specify a custom path, the current folder will be selected as root.
-
-## TODOs
-
-- Thread pool?
 
 ## Contact
 

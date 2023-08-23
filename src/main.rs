@@ -7,9 +7,11 @@ use std::{io::{Read, Write},
           thread,
           fs::{metadata, File},
           time::Duration,
-          collections::HashMap};
+          collections::HashMap, 
+          sync::Arc};
 
 use chrono;
+use num_cpus;
 
 
 mod html;
@@ -69,13 +71,21 @@ fn handle_get_request(stream: &mut TcpStream, path_asked: &str, starting_path: &
     if is_file {
         let send_delay = 3;
         let mut file = File::open(full_path).unwrap();
+        let mut countdown = 10;
         loop {
             match file.read(buffer) {
                 Ok(0) => break,
                 Ok(bytes_read) => {
-                    stream.write_all(&buffer[..bytes_read]).map_err(|err| {
-                        eprintln!("{peer_ip}: {err}");
-                    }).unwrap();
+                    if let Err(err) = stream.write_all(&buffer[..bytes_read]) {
+                        if countdown == 10 {
+                            eprintln!("{date}- {peer_ip}: Failed to write to buffer. {err}", date = formatted_now_date());
+                        }
+                        countdown -= 1;
+                        if countdown == 0 {
+                            eprintln!("{date}- {peer_ip}: Failed too many times trying to write to buffer. Abandoning...", date = formatted_now_date());
+                            break;
+                        }
+                    }
                     thread::sleep(Duration::from_millis(send_delay));
                 },
                 Err(err) => {
@@ -87,12 +97,12 @@ fn handle_get_request(stream: &mut TcpStream, path_asked: &str, starting_path: &
     }
     match stream.flush() {
         Ok(_) => {},
-        Err(err) => { eprintln!("{date} - {peer_ip}: {err}", date = formatted_now_date()); },
+        Err(err) => { eprintln!("{date} - {peer_ip}: Error trying to flush connection: {err}", date = formatted_now_date()); },
     }
 }
 
 
-fn handle_client(mut stream: TcpStream, starting_path: String) {
+fn handle_client(mut stream: TcpStream, starting_path: &str) {
     let peer_addr = stream.peer_addr().unwrap().to_string();
     let peer_ip = peer_addr.split(":").next().unwrap();
 
@@ -109,58 +119,83 @@ fn handle_client(mut stream: TcpStream, starting_path: String) {
 }
 
 
+fn listener_cycle(listener: Arc<TcpListener>, starting_path: String) {
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => { 
+                handle_client(stream, &starting_path);
+            }
+            Err(err) => { eprintln!("Error handling an incoming stream: {err}"); }
+        }
+    }
+}
+
+
 fn main() {
     if look_for_flag("help") {
         println!("Usage: nas-at-home [FLAGS] [OPTIONS]");
         println!();
         println!("FLAGS:");
-        println!("  --help   Prints this, nothing else happens.");
+        println!("  --help     Prints this, nothing else happens.");
         println!("OPTIONS");
-        println!("  --ip      Sets the ip for the TCP Listener, 127.0.0.1 is the default value.");
-        println!("            Example: --ip 127.0.0.1");
-        println!("  --port    Sets the port for the TCP Listener, 8080 is the default value.");
-        println!("            Example: --port 8080");
-        println!("  --path    Sets the root folder, . is the default value.");
-        println!("            Example: --path /home/");
+        println!("  --ip       Sets the ip for the TCP Listener, 127.0.0.1 is the default value.");
+        println!("             Example: --ip 127.0.0.1");
+        println!("  --port     Sets the port for the TCP Listener, 8080 is the default value.");
+        println!("             Example: --port 8080");
+        println!("  --path     Sets the root folder, . is the default value.");
+        println!("             Example: --path /home/");
+        println!("  --threads  Sets the number of threads in the thread pool.");
+        println!("             Example: --threads 5");
+        println!("             Number of physical cpus is the default value.");
         println!();
     } else {
         let ip = look_for_option("ip").unwrap_or("127.0.0.1".to_string());
         let port = look_for_option("port").unwrap_or("8080".to_string());
-        let mut starting_path = look_for_option("path").unwrap_or(".".to_string());
-        if starting_path != "/" && starting_path.ends_with("/") {
-            starting_path = starting_path[..starting_path.len() - 1].to_string();
-        }
-        if cfg!(windows) && starting_path == "/" {
-            eprintln!("Not a linux system. Please try a different path");
-            return ()
-        }
-        if let Ok(path_metadata) = metadata(&starting_path) {
-            if !path_metadata.is_dir() {
-                eprintln!("Could not start the server using the following path: {starting_path}");
-                eprintln!("Is it a folder?");
-                return ()
-            }
-        } else {
-            eprintln!("Could not start the server using the following path: {starting_path}");
-            eprintln!("Is it a valid path?");
-            return ()
-        }
-        match TcpListener::bind(&format!("{ip}:{port}")) {
-            Ok(listener) => {
-                println!("Server listening with address {ip}:{port}...\n");
-                println!("Server started at path {starting_path}");
-
-                for stream in listener.incoming() {
-                    match stream {
-                        Ok(stream) => { 
-                            let starting_path_clone = starting_path.clone();
-                            thread::spawn(move || handle_client(stream, starting_path_clone)); 
-                        }
-                        Err(err) => { eprintln!("Error handling an incoming stream: {err}"); }
-                    }
+        let threads = look_for_option("threads").unwrap_or(num_cpus::get_physical().to_string());
+        match threads.parse::<usize>() {
+            Ok(threads) => {
+                if threads < 1 {
+                    eprintln!("Please pick a positive number for the thread pool");
+                    return ()
                 }
-            }
-            Err(err) => { eprintln!("Error trying to create the server: {err}") }
+                let mut starting_path = look_for_option("path").unwrap_or(".".to_string());
+                if starting_path != "/" && starting_path.ends_with("/") {
+                    starting_path = starting_path[..starting_path.len() - 1].to_string();
+                }
+                if cfg!(windows) && starting_path == "/" {
+                    eprintln!("Not a linux system. Please try a different path");
+                    return ()
+                }
+                if let Ok(path_metadata) = metadata(&starting_path) {
+                    if !path_metadata.is_dir() {
+                        eprintln!("Could not start the server using the following path: {starting_path}");
+                        eprintln!("Is it a folder?");
+                        return ()
+                    }
+                } else {
+                    eprintln!("Could not start the server using the following path: {starting_path}");
+                    eprintln!("Is it a valid path?");
+                    return ()
+                }
+                match TcpListener::bind(&format!("{ip}:{port}")) {
+                    Ok(listener) => {
+                        let listener = Arc::new(listener);
+                        println!("Server listening with address {ip}:{port}...\n");
+                        println!("Server started at path {starting_path}");
+                        let mut thread_holder = Vec::with_capacity(4);
+                        for _ in 0..threads {
+                            let listener_copy = listener.clone();
+                            let starting_path_copy = starting_path.to_string();
+                            thread_holder.push(thread::spawn(move || { listener_cycle(listener_copy, starting_path_copy); }));
+                        }
+                        for t in thread_holder {
+                            t.join().expect("Something went wrong in one of the threads.");
+                        }
+                    }
+                    Err(err) => { eprintln!("Error trying to create the server: {err}") }
+                }
+            },
+            Err(err) => { eprintln!("Error parsing number of threads: {err}"); },
         }
     }
 }
