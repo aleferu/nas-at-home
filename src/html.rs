@@ -1,17 +1,17 @@
 use std::{time::SystemTime,
           ffi::OsString,
           fs::read_dir};
+
 use chrono;
 
 
-pub fn build_body_from_folder(starting_path: &str, folder_path: &str, order: &str, asc: bool, upload: bool) -> String {
+pub fn build_body_from_folder(starting_path: &str, folder_path: &str, order: &str, asc: bool) -> String {
     let mut response_body = html_start_head();
-    if upload {
-        response_body.push_str(&upload_part());
-    }
-    response_body.push_str(&folder_name_part(starting_path, folder_path));
+    response_body.push_str(&folder_name_part(folder_path));
     response_body.push_str(&order_by_part(order, asc));
-    response_body.push_str(&list_elements(folder_path, order, asc));
+    let mut full_path = starting_path.to_string();
+    full_path.push_str(folder_path);
+    response_body.push_str(&list_elements(&full_path, folder_path, order, asc));
     response_body.push_str(&html_end(false));
     response_body
 }
@@ -29,43 +29,6 @@ pub fn build_body_from_404(failed_path: &str) -> String {
 "#));
     response_body.push_str(&html_end(true));
     response_body
-}
-
-
-pub fn clean_weird_chars(input: String) -> String{
-    let mut decoded_string = String::new();
-    let mut bytes = Vec::new();
-
-    let mut chars = input.chars();
-    while let Some(c) = chars.next() {
-        if c == '%' {
-            let chars_clone = chars.clone();
-            let next_char: String = chars_clone.take(1).collect();
-            if next_char == "%" {
-                decoded_string.push(c);
-            } else {
-                let hex_str: String = chars.by_ref().take(2).collect();
-                if let Ok(byte) = u8::from_str_radix(&hex_str, 16) {
-                    bytes.push(byte);
-                } else {
-                    decoded_string.push(c);
-                    decoded_string.push_str(&hex_str);
-                }
-            }
-        } else {
-            if !bytes.is_empty() {
-                decoded_string.push_str(&String::from_utf8_lossy(&bytes));
-                bytes.clear();
-            }
-            decoded_string.push(c);
-        }
-    }
-
-    if !bytes.is_empty() {
-        decoded_string.push_str(&String::from_utf8_lossy(&bytes));
-    }
-
-    decoded_string
 }
 
 
@@ -92,33 +55,13 @@ fn html_start_head() -> String {
 }
 
 
-// TODO
-fn upload_part() -> String {
-    format!(r#"
-<form style="margin-top:1em; margin-bottom:1em;" method="POST" enctype="multipart/form-data">
-  <input type="file" name="files" accept="*" multiple />
-  <input type="submit" value"Upload" />
-</form>
-"#)
-}
-
-
-fn folder_name_part(starting_path: &str, folder_path: &str) -> String {
+fn folder_name_part(folder_path: &str) -> String {
     let mut current_path = String::from("/");
     let mut result = format!(r#"
 <div>
   <a href="{current_path}"><strong>ROOT</strong></a>
     "#);
-    let mut folder_path_splitted = folder_path.split('/');
-    if starting_path.starts_with('/') {
-        let mut starting_path_splitted = starting_path.split('/');
-        while let Some(_) = starting_path_splitted.next() {
-            folder_path_splitted.next();
-        }
-    } else {
-        folder_path_splitted.next();
-    }
-    for folder in folder_path_splitted {
+    for folder in folder_path.split('/') {
         if folder == "" { continue }
         current_path.push_str(&format!("{folder}/"));
         result.push_str(" / ");
@@ -195,8 +138,8 @@ fn readable_last_mod(last_mod: SystemTime) -> String {
 }
 
 
-fn list_elements(folder_path: &str, order: &str, asc: bool) -> String {
-    match read_dir(folder_path) {
+fn list_elements(full_path: &str, folder_path: &str, order: &str, asc: bool) -> String {
+    match read_dir(full_path) {
         Ok(mut entries) => {
             let mut directories: Vec<Element> = Vec::new();
             let mut files: Vec<Element> = Vec::new();
@@ -210,13 +153,13 @@ fn list_elements(folder_path: &str, order: &str, asc: bool) -> String {
                         if metadata.is_dir() {
                             directories.push(Element{
                                 name: entry.file_name(), 
-                                last_mod: last_mod, 
+                                last_mod, 
                                 size: metadata.len()
                             });
                         } else {
                             files.push(Element{
                                 name: entry.file_name(),
-                                last_mod: last_mod,
+                                last_mod,
                                 size: metadata.len()
                             });
                         }
@@ -245,12 +188,12 @@ fn list_elements(folder_path: &str, order: &str, asc: bool) -> String {
                 let bytes = readable_bytes(file.size);
                 result.push_str(&format!(r#"
 <tr>
-  <td><a href="{}">{}</a></td>
+  <td><a href="{}{}">{}</a></td>
   <td style="color:#888;">{}</td>
   <td><bold>{}</bold></td>
   <td><bold>{}</bold></td>
 </tr>
-"#, name, name, last_mod, bytes, file.size));
+"#, folder_path, name, name, last_mod, bytes, file.size));
             }
             result
         },

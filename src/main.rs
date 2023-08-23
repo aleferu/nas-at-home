@@ -1,25 +1,20 @@
-use crate::{html::{build_body_from_folder, build_body_from_404, clean_weird_chars},
-            args_reader::*};
+use crate::{html::{build_body_from_folder, build_body_from_404},
+            args_reader::*,
+            http_parser::Request};
 
 use std::{io::{Read, Write},
           net::{TcpListener, TcpStream},
           thread,
-          fs::{metadata, File}, eprintln,
+          fs::{metadata, File},
           time::Duration,
-          sync::Mutex,
-          collections::HashMap, unimplemented};
-use core::str::Split;
+          collections::HashMap};
 
 use chrono;
-use lazy_static::lazy_static;
-
-lazy_static! {
-    static ref LAST_PATH_ASKED: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
-}
 
 
 mod html;
 mod args_reader;
+mod http_parser;
 
 
 fn formatted_now_date() -> String {
@@ -27,56 +22,22 @@ fn formatted_now_date() -> String {
 }
 
 
-fn handle_get_request(
-    mut stream: TcpStream, 
-    starting_path: String, 
-    upload: bool, 
-    peer_ip: &str, 
-    buffer: &mut [u8], 
-    get_line_splitted: &mut Split<char>
-) {
-    let mut path_asked = starting_path.clone();
-    let order: &str;
-    let asc: bool;
-    if let Some(word) = get_line_splitted.next() {
-        let mut word_splitted = word.split("?");
-        let mut word_splitted_count = word.split("?").count();
-        if word_splitted_count == 1 {
-            path_asked.push_str(word);
-            order = "name";
-            asc = true;
-        } else {
-            let mut last_part = word_splitted.next().unwrap();
-            word_splitted_count -= 1;
-            while word_splitted_count != 0 {
-                path_asked.push_str(last_part);
-                last_part = word_splitted.next().unwrap();
-                word_splitted_count -= 1;
-            }
-            let mut last_part_splitted = last_part.split("&");
-            let last_part_splitted_count = last_part.split("&").count();
-            if last_part_splitted_count != 2 {
-                order = "name";
-                asc = true;
-            } else {
-                order = last_part_splitted.next().unwrap().split("=").last().unwrap();
-                asc = match last_part_splitted.next().unwrap().split("=").last().unwrap() {
-                    "true" => true,
-                    "false" | _ => false,
-                };
-            }
-        }
-    } else {
-        eprintln!("{date} - {peer_ip}: something went wrong. Weird request.", date = formatted_now_date());
-        return
-    }
-    let path_asked = clean_weird_chars(path_asked);
-    LAST_PATH_ASKED.lock().unwrap().insert(peer_ip.to_string(), path_asked.clone());
+fn handle_get_request(stream: &mut TcpStream, path_asked: &str, starting_path: &str, peer_ip: &str, buffer: &mut [u8], options: &Option<HashMap<String, String>>) {
     let response: String;
     let mut is_file: bool = false;
-    if let Ok(path_metadata) = metadata(&path_asked) {
-        if path_metadata.is_dir() {
-            let response_body = build_body_from_folder(&starting_path, &path_asked, order, asc, upload);
+    let mut full_path = starting_path.to_string();
+    full_path.push_str(path_asked);
+    if let Ok(file_metadata) = metadata(&full_path) {
+        if file_metadata.is_dir() {
+            let (order, asc) = match options {
+                Some(options) => {
+                    let order = options.get("order").unwrap_or(&"name".to_string()).clone();
+                    let asc = options.get("asc").unwrap_or(&"true".to_string()).clone();
+                    (order, asc == "true")
+                },
+                None => { ("name".to_string(), true) },
+            };
+            let response_body = build_body_from_folder(starting_path, path_asked, &order, asc);
             response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-cache, no-store, must-revalidate\r\nPragma: no-cache\r\nExpires: 0\r\n\r\n{}",
                 response_body.len(),
@@ -85,9 +46,9 @@ fn handle_get_request(
         } else {
             let future_file_name = path_asked.split('/').last().unwrap();
             response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Disposition: attachment; filename=\"{}\"\r\nContent-type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Disposition: attachment; filename=\"{}\"\r\nCache-Control: no-cache, no-store, must-revalidate\r\nPragma: no-cache\r\nExpires: 0\r\nContent-type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
                 future_file_name,
-                path_metadata.len(),
+                file_metadata.len(),
             );
             is_file = true;
         }
@@ -106,8 +67,8 @@ fn handle_get_request(
         eprintln!("{peer_ip}: {err}");
     }).unwrap();
     if is_file {
-        let send_delay = 5;
-        let mut file = File::open(format!("{path_asked}")).unwrap();
+        let send_delay = 3;
+        let mut file = File::open(full_path).unwrap();
         loop {
             match file.read(buffer) {
                 Ok(0) => break,
@@ -131,47 +92,20 @@ fn handle_get_request(
 }
 
 
-fn handle_post_request() {
-    unimplemented!()
-}
-
-
-fn handle_client(mut stream: TcpStream, starting_path: String, upload: bool) {
+fn handle_client(mut stream: TcpStream, starting_path: String) {
     let peer_addr = stream.peer_addr().unwrap().to_string();
     let peer_ip = peer_addr.split(":").next().unwrap();
 
-    const BUFFER_SIZE: usize = 1024 * 1024;
+    const BUFFER_SIZE: usize = 100 * 1024;
     let mut buffer = [0u8; BUFFER_SIZE];
     stream.read(&mut buffer).unwrap();
-    let full_request: String = String::from_utf8_lossy(&buffer).to_string();
-    let mut request_lines = full_request.lines();
-    let get_line = request_lines.next().unwrap();
-    let mut get_line_splitted = get_line.split(' ');
-    match get_line_splitted.next() {
-        Some(word) => {
-            match word {
-                "GET" => handle_get_request(stream, starting_path, upload, peer_ip, &mut buffer, &mut get_line_splitted),
-                "POST" => {
-                    match LAST_PATH_ASKED.lock().unwrap().get(peer_ip) {
-                        Some(_) => {
-                            handle_post_request();
-                        }
-                        None => {
-                            eprintln!("{date} - {peer_ip}: Invalid POST request, never served before.\nMaybe trying to hack the server.", date = formatted_now_date());
-                        },
-                    }
-                },
-                _ => {
-                    eprintln!("{date} - {peer_ip}: Invalid request received.", date = formatted_now_date());
-                    return
-                } 
-            }
-        }
-        None => {
-            eprintln!("{date} - {peer_ip}: Invalid request received.", date = formatted_now_date());
-            return
-        }
-    }
+    match Request::from(&buffer) {
+        Request::Get { path: path_asked, options } => { 
+            println!("{date} - {peer_ip}: GET {path_asked}", date = formatted_now_date());
+            handle_get_request(&mut stream, &path_asked, &starting_path, peer_ip, &mut buffer, &options)
+        },
+        Request::Unsupported => { eprintln!("{date} - {peer_ip}: Invalid request received.", date = formatted_now_date()) },
+    };
 }
 
 
@@ -188,8 +122,6 @@ fn main() {
         println!("            Example: --port 8080");
         println!("  --path    Sets the root folder, . is the default value.");
         println!("            Example: --path /home/");
-        println!("  --upload  Gives the client the ability to upload files.");
-        println!("            NOT IMPLEMENTED, DOES NOTHING AT THE MOMENT.");
         println!();
     } else {
         let ip = look_for_option("ip").unwrap_or("127.0.0.1".to_string());
@@ -213,7 +145,6 @@ fn main() {
             eprintln!("Is it a valid path?");
             return ()
         }
-        let upload = look_for_flag("upload");
         match TcpListener::bind(&format!("{ip}:{port}")) {
             Ok(listener) => {
                 println!("Server listening with address {ip}:{port}...\n");
@@ -223,7 +154,7 @@ fn main() {
                     match stream {
                         Ok(stream) => { 
                             let starting_path_clone = starting_path.clone();
-                            thread::spawn(move || handle_client(stream, starting_path_clone, upload)); 
+                            thread::spawn(move || handle_client(stream, starting_path_clone)); 
                         }
                         Err(err) => { eprintln!("Error handling an incoming stream: {err}"); }
                     }

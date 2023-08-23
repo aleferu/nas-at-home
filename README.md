@@ -2,17 +2,16 @@
 
 **HIGHLY** inspired by [TheWaWaR](https://github.com/TheWaWaR)'s version of the software: [simple-http-server](https://github.com/TheWaWaR/simple-http-server). Please make sure to take a look at his work before looking more into mine.
 
-My goal is to build something similar without taking a look at his code (I can look at the html my browser receives). Bare in mind this is my first time using http (or https if I end up implementing it) and/or html + css...
+My goal is to build something similar without taking a look at his code (I can look at the html my browser receives). Bare in mind this is my first time using http and/or html + css...
 
-## State of development
+## Disclaimer
 
-Downloads works, uploads are yet to be implemented (I currently don't even know how to start with that).
+Use at your own risk. No security is implemented.
 
 ## Dependencies
 
 - [Rust](https://www.rust-lang.org/)
 - [chrono](https://docs.rs/chrono/latest/chrono/) crate.
-- [lazy_static](https://docs.rs/lazy_static/latest/lazy_static/) crate.
 
 ## Installation
 
@@ -22,14 +21,16 @@ $ cargo build --release
 
 ## Usage
 
-You can run the program using the following command:
+You can run the program using [cargo](https://doc.rust-lang.org/cargo/) or executing the binary:
 ```console
 $ cargo run --release
+
+$ ./target/release/nas-at-home
 ```
 
 Help text:
 ```console
-$ nas-at-home --help
+$ ./nas-at-home --help
 Usage: nas-at-home [FLAGS] [OPTIONS]
 
 FLAGS:
@@ -45,18 +46,14 @@ OPTIONS
 
 An example would be:
 ```console
-$ nas-at-home --ip 127.0.0.1 --port 8080 --path /home/user/
+$ ./nas-at-home --ip 127.0.0.1 --port 8080 --path /home/user/
 ```
 
 If you dont specify a custom path, the current folder will be selected as root.
 
 ## TODOs
 
-Priority: top to bottom.
-
-- Upload?
-- Maybe https.
-- I don't know hot to setup passwords but it's an idea.
+- Thread pool?
 
 ## Contact
 
