@@ -78,11 +78,11 @@ fn handle_get_request(stream: &mut TcpStream, path_asked: &str, starting_path: &
                 Ok(bytes_read) => {
                     if let Err(err) = stream.write_all(&buffer[..bytes_read]) {
                         if countdown == 10 {
-                            eprintln!("{date}- {peer_ip}: Failed to write to buffer. {err}", date = formatted_now_date());
+                            eprintln!("{date} - {peer_ip}: Failed to write to buffer. {err}", date = formatted_now_date());
                         }
                         countdown -= 1;
                         if countdown == 0 {
-                            eprintln!("{date}- {peer_ip}: Failed too many times trying to write to buffer. Abandoning...", date = formatted_now_date());
+                            eprintln!("{date} - {peer_ip}: Failed too many times trying to write to buffer. Abandoning...", date = formatted_now_date());
                             break;
                         }
                     }
@@ -105,11 +105,20 @@ fn handle_get_request(stream: &mut TcpStream, path_asked: &str, starting_path: &
 fn handle_client(mut stream: TcpStream, starting_path: &str) {
     let peer_addr = stream.peer_addr().unwrap().to_string();
     let peer_ip = peer_addr.split(":").next().unwrap();
+    let _ = stream.set_read_timeout(Some(Duration::new(0, 500)));
 
     const BUFFER_SIZE: usize = 100 * 1024;
     let mut buffer = [0u8; BUFFER_SIZE];
-    stream.read(&mut buffer).unwrap();
-    match Request::from(&buffer) {
+    let mut bytes_received: Vec<u8> = Vec::new();
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(bytes_read) if bytes_read > 0 => {
+                bytes_received.extend_from_slice(&buffer[0..bytes_read]);
+            }
+            _ => break,
+        }
+    }
+    match Request::from(bytes_received.as_slice()) {
         Request::Get { path: path_asked, options } => { 
             println!("{date} - {peer_ip}: GET {path_asked}", date = formatted_now_date());
             handle_get_request(&mut stream, &path_asked, &starting_path, peer_ip, &mut buffer, &options)
