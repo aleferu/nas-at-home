@@ -36,23 +36,19 @@ impl Request {
         let mut request_content = request_content.iter_mut();
         let request_line = String::from_utf8(request_content.next().unwrap().to_vec()).unwrap();
         let mut request_line_splitted = request_line.split(' ');
-        match request_line_splitted.next().unwrap() {
-            "GET" => {
-                if let Some(path) = request_line_splitted.next() {
-                    let cleaned_path = clean_weird_chars(path.to_string());
-                    match parse_url(&cleaned_path) {
-                        Some((path_asked, query_params)) => {
-                            return Request::Get { path: path_asked, options: query_params }
-                        },
-                        None => {
-                            return Request::Unsupported;
-                        }
-                    }
+        let request_method: &str = request_line_splitted.next().unwrap();
+        if let Some(path) = request_line_splitted.next() {
+            if request_method == "GET" {
+                let cleaned_path = clean_weird_chars(path.to_string());
+                if let Some((path_asked, query_params)) = parse_url(&cleaned_path) {
+                    return Request::Get { path: path_asked, options: query_params }
                 }
-                return Request::Unsupported;
-            },
-            _ => { return Request::Unsupported; },
+            }
+            else if request_method == "POST" {
+                todo!()
+            }
         }
+        return Request::Unsupported;
     }
 }
 
