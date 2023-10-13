@@ -45,7 +45,7 @@ impl Request {
                 }
             }
             else if request_method == "POST" {
-                todo!()
+                return Request::Unsupported;
             }
         }
         return Request::Unsupported;
